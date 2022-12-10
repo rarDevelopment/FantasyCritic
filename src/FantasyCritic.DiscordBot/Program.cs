@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Events;
 using FantasyCritic.Lib.Discord.Models;
+using MediatR;
 
 namespace FantasyCritic.DiscordBot;
 
@@ -55,6 +56,7 @@ public class Program
             .AddTransient<IClock>(_ => SystemClock.Instance)
             .AddSingleton<DiscordSocketClient>()
             .AddSingleton(x => new InteractionService(x.GetRequiredService<DiscordSocketClient>()))
+            .AddMediatR(typeof(DiscordBotService))
             .AddSingleton<DiscordBotService>()
             .AddSingleton(repositoryConfiguration)
             .AddScoped<IDiscordRepo, MySQLDiscordRepo>()

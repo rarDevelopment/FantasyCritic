@@ -3,6 +3,7 @@ using Discord.WebSocket;
 using DiscordDotNetUtilities;
 using DiscordDotNetUtilities.Interfaces;
 using FantasyCritic.Lib.DependencyInjection;
+using FantasyCritic.Lib.Discord.Notifications;
 using FantasyCritic.Lib.Discord.UrlBuilders;
 using FantasyCritic.Lib.Discord.Utilities;
 using FantasyCritic.Lib.Domain.Combinations;
@@ -10,6 +11,7 @@ using FantasyCritic.Lib.Domain.LeagueActions;
 using FantasyCritic.Lib.Domain.Trades;
 using FantasyCritic.Lib.Extensions;
 using FantasyCritic.Lib.Interfaces;
+using MediatR;
 
 namespace FantasyCritic.Lib.Discord;
 public class DiscordPushService
@@ -20,6 +22,7 @@ public class DiscordPushService
     private readonly IDiscordRepo _discordRepo;
     private readonly IDiscordSupplementalDataRepo _supplementalDataRepo;
     private readonly IDiscordFormatter _discordFormatter;
+    private readonly IMediator _mediator;
     private readonly DiscordSocketClient _client;
     private bool _botIsReady;
     private readonly bool _enabled;
@@ -29,7 +32,8 @@ public class DiscordPushService
         FantasyCriticDiscordConfiguration configuration,
         IDiscordRepo discordRepo,
         IDiscordSupplementalDataRepo supplementalDataRepo,
-        IDiscordFormatter discordFormatter)
+        IDiscordFormatter discordFormatter,
+        IMediator mediator)
     {
         _enabled = !string.IsNullOrEmpty(configuration.BotToken) && configuration.BotToken != "secret";
         _botToken = configuration.BotToken;
@@ -37,6 +41,7 @@ public class DiscordPushService
         _discordRepo = discordRepo;
         _supplementalDataRepo = supplementalDataRepo;
         _discordFormatter = discordFormatter;
+        _mediator = mediator;
         DiscordSocketConfig socketConfig = new()
         {
             GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.GuildMembers,
@@ -86,39 +91,41 @@ public class DiscordPushService
 
     public async Task SendNewMasterGameMessage(MasterGame masterGame, int year)
     {
-        bool shouldRun = await StartBot();
-        if (!shouldRun)
-        {
-            return;
-        }
+        //bool shouldRun = await StartBot();
+        //if (!shouldRun)
+        //{
+        //    return;
+        //}
 
-        var allChannels = await _discordRepo.GetAllLeagueChannels();
-        var newsEnabledChannels = allChannels.Where(x => x.GameNewsSetting != DiscordGameNewsSetting.Off).ToList();
+        await _mediator.Publish(new NewMasterGameNotification(masterGame, year));
 
-        var messageTasks = new List<Task>();
-        foreach (var leagueChannel in newsEnabledChannels)
-        {
-            if (leagueChannel.GameNewsSetting == DiscordGameNewsSetting.Relevant)
-            {
-                bool gameIsRelevant = NewGameIsRelevant(masterGame, year);
-                if (!gameIsRelevant)
-                {
-                    continue;
-                }
-            }
+        //var allChannels = await _discordRepo.GetAllLeagueChannels();
+        //var newsEnabledChannels = allChannels.Where(x => x.GameNewsSetting != DiscordGameNewsSetting.Off).ToList();
 
-            var guild = _client.GetGuild(leagueChannel.GuildID);
-            var channel = guild?.GetChannel(leagueChannel.ChannelID);
-            if (channel is not SocketTextChannel textChannel)
-            {
-                continue;
-            }
+        //var messageTasks = new List<Task>();
+        //foreach (var leagueChannel in newsEnabledChannels)
+        //{
+        //    if (leagueChannel.GameNewsSetting == DiscordGameNewsSetting.Relevant)
+        //    {
+        //        bool gameIsRelevant = NewGameIsRelevant(masterGame, year);
+        //        if (!gameIsRelevant)
+        //        {
+        //            continue;
+        //        }
+        //    }
 
-            var tagsString = string.Join(", ", masterGame.Tags.Select(x => x.ReadableName));
-            messageTasks.Add(textChannel.TrySendMessageAsync($"New Game Added! **{masterGame.GameName}** (Tagged as: **{tagsString}**)"));
-        }
+        //    var guild = _client.GetGuild(leagueChannel.GuildID);
+        //    var channel = guild?.GetChannel(leagueChannel.ChannelID);
+        //    if (channel is not SocketTextChannel textChannel)
+        //    {
+        //        continue;
+        //    }
 
-        await Task.WhenAll(messageTasks);
+        //    var tagsString = string.Join(", ", masterGame.Tags.Select(x => x.ReadableName));
+        //    messageTasks.Add(textChannel.TrySendMessageAsync($"New Game Added! **{masterGame.GameName}** (Tagged as: **{tagsString}**)"));
+        //}
+
+        //await Task.WhenAll(messageTasks);
     }
 
     public async Task SendGameCriticScoreUpdateMessage(MasterGame game, decimal? oldCriticScore, decimal? newCriticScore, int year)
@@ -276,10 +283,7 @@ public class DiscordPushService
         await Task.WhenAll(messageTasks);
     }
 
-    private bool NewGameIsRelevant(MasterGame masterGame, int year)
-    {
-        return masterGame.CouldReleaseInYear(year);
-    }
+
 
     private static bool GameIsRelevant(MasterGameYear masterGameYear, bool releaseStatusChanged, IReadOnlySet<Guid> leaguesWithGame, MinimalLeagueChannel channel)
     {

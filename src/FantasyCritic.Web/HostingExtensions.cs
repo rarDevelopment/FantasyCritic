@@ -38,6 +38,7 @@ using Microsoft.Extensions.Configuration;
 using FantasyCritic.Postmark;
 using FantasyCritic.Lib.Discord;
 using FantasyCritic.Lib.Discord.Models;
+using MediatR;
 
 namespace FantasyCritic.Web;
 
@@ -80,7 +81,7 @@ public static class HostingExtensions
         services.AddSingleton<PatreonConfig>(_ => patreonConfig);
         services.AddSingleton<EmailSendingServiceConfiguration>(_ => emailSendingConfig);
         services.AddSingleton<FantasyCriticDiscordConfiguration>(_ => discordConfiguration);
-        services.AddSingleton<DiscordPushService>(_ => GetDiscordPushService(discordConfiguration, repoConfiguration));
+        services.AddSingleton<DiscordPushService>(_ => GetDiscordPushService(discordConfiguration, repoConfiguration, services.BuildServiceProvider()));
 
         services.AddScoped<IFantasyCriticUserStore, MySQLFantasyCriticUserStore>();
         services.AddScoped<IReadOnlyFantasyCriticUserStore, MySQLFantasyCriticUserStore>();
@@ -167,7 +168,7 @@ public static class HostingExtensions
                 args.SetObserved();
             });
         }
-        
+
         if (!string.IsNullOrWhiteSpace(discordBotToken) && discordBotToken != "secret")
         {
             //Discord request service
@@ -184,6 +185,7 @@ public static class HostingExtensions
             services.AddSingleton(fantasyCriticSettings);
             services.AddScoped<DiscordSocketClient>();
             services.AddScoped(x => new InteractionService(x.GetRequiredService<DiscordSocketClient>()));
+            services.AddMediatR(typeof(DiscordBotService));
             services.AddScoped<DiscordBotService>();
             services.AddScoped<IDiscordFormatter, DiscordFormatter>();
             services.AddHostedService<DiscordHostedService>();
@@ -382,13 +384,15 @@ public static class HostingExtensions
         return app;
     }
 
-    private static DiscordPushService GetDiscordPushService(FantasyCriticDiscordConfiguration discordConfiguration, RepositoryConfiguration repositoryConfiguration)
+    private static DiscordPushService GetDiscordPushService(FantasyCriticDiscordConfiguration discordConfiguration,
+        RepositoryConfiguration repositoryConfiguration, IServiceProvider provider)
     {
         var userStore = new MySQLFantasyCriticUserStore(repositoryConfiguration);
         var masterGameRepo = new MySQLMasterGameRepo(repositoryConfiguration, userStore);
         var fantasyCriticRepo = new MySQLFantasyCriticRepo(repositoryConfiguration, userStore, masterGameRepo);
         var discordRepo = new MySQLDiscordRepo(repositoryConfiguration, fantasyCriticRepo);
         var supplementalDataRepo = new MySQLDiscordSupplementalDataRepo(repositoryConfiguration);
-        return new DiscordPushService(discordConfiguration, discordRepo, supplementalDataRepo, new DiscordFormatter());
+        var mediator = provider.GetService<IMediator>()!;
+        return new DiscordPushService(discordConfiguration, discordRepo, supplementalDataRepo, new DiscordFormatter(), mediator);
     }
 }
