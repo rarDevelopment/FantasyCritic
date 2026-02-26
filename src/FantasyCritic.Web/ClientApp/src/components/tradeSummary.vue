@@ -56,7 +56,7 @@
             </template>
             <template v-if="isCounterParty">
               <p>The only option at this point is to reject the trade. Another trade can be proposed if you wish.</p>
-              <b-button variant="success" @click="rejectTrade">Rescind Trade</b-button>
+              <b-button variant="success" @click="rejectTrade">Reject Trade</b-button>
             </template>
           </div>
         </div>
@@ -67,7 +67,7 @@
             <b-button v-if="isProposer" variant="danger" @click="rescindTrade">Rescind Trade</b-button>
           </div>
           <div v-if="trade.status === 'Accepted' && isProposer" class="alert alert-info">
-            Trade is has been accepted by '{{ trade.counterPartyPublisherName }}', but you can still rescind it.
+            Trade has been accepted by '{{ trade.counterPartyPublisherName }}', but you can still rescind it.
             <div>Trade will expire on {{ trade.willExpireTimestamp | dateTimeAt }}.</div>
             <b-button variant="danger" @click="rescindTrade">Rescind Trade</b-button>
           </div>
