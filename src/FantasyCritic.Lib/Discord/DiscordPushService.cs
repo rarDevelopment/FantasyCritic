@@ -753,32 +753,7 @@ public class DiscordPushService
                 continue;
             }
 
-            var gamesByDate = new Dictionary<LocalDate, List<MatchedGameDisplay>>();
-            foreach (var games in gamesInLeague)
-            {
-                var releaseDate = games.GameFound.MasterGame.ReleaseDate!.Value;
-                if (gamesByDate.ContainsKey(releaseDate))
-                {
-                    gamesByDate[games.GameFound.MasterGame.ReleaseDate.Value].Add(games);
-                }
-                else
-                {
-                    gamesByDate.Add(games.GameFound.MasterGame.ReleaseDate.Value, [games]);
-                }
-            }
-
-            var orderedGamesByDate = gamesByDate.OrderBy(t => t.Key);
-            var gameDateMessages = orderedGamesByDate
-                .Select(t =>
-                    $"## {t.Key}\n" +
-                    string.Join("\n",
-                        t.Value.Select(g =>
-                            $"**{g.GameFound.MasterGame.GameName}**"
-                            + (g.PublisherWhoPicked != null ? $"\nPicked: {g.PublisherWhoPicked.GetPublisherAndUserDisplayName()}" : "")
-                            + (g.PublisherWhoCounterPicked != null ? $"\nCounter Picked: {g.PublisherWhoCounterPicked.GetPublisherAndUserDisplayName()}" : "")
-                            + $"\nHype Factor: {g.GameFound.HypeFactor:F2}")));
-
-            var finalMessage = string.Join("\n-----------\n", gameDateMessages);
+            var finalMessage = DiscordSharedMessageUtilities.BuildDateGroupedGameMessages(gamesInLeague, _baseAddress);
 
             if (finalMessage.Length > 4096)
             {

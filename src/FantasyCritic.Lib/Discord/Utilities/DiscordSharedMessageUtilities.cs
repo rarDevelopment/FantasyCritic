@@ -1,3 +1,4 @@
+using FantasyCritic.Lib.Discord.Models;
 using FantasyCritic.Lib.Discord.UrlBuilders;
 using FantasyCritic.Lib.Domain.Conferences;
 using FantasyCritic.Lib.Domain.LeagueActions;
@@ -6,34 +7,89 @@ using FantasyCritic.Lib.Identity;
 namespace FantasyCritic.Lib.Discord.Utilities;
 public static class DiscordSharedMessageUtilities
 {
-    public static string? BuildGameMessage(Publisher? standardPublisher, Publisher? counterPickPublisher, MasterGame masterGame, string baseAddress)
+    public static string BuildDateGroupedGameMessages(IReadOnlyList<MatchedGameDisplay> games, string baseAddress)
     {
-        var gameUrl = new GameUrlBuilder(baseAddress, masterGame.MasterGameID).BuildUrl(masterGame.GameName);
+        var gamesByDate = games
+            .GroupBy(g => g.GameFound.MasterGame.ReleaseDate?.ToString() ?? g.GameFound.MasterGame.EstimatedReleaseDate)
+            .OrderBy(g => g.Min(x => x.GameFound.MasterGame.GetDefiniteMaximumReleaseDate()));
 
-        if (standardPublisher is not null)
+        var dateSections = gamesByDate.Select(group =>
         {
-            return counterPickPublisher is not null
-                ? $"> **{masterGame.EstimatedReleaseDate}** - {gameUrl}\n > {standardPublisher.GetPublisherAndUserDisplayName()}\n > Counter Picked By {counterPickPublisher.GetPublisherAndUserDisplayName()}"
-                : $"> **{masterGame.EstimatedReleaseDate}** - {gameUrl}\n > {standardPublisher.GetPublisherAndUserDisplayName()}";
-        }
+            var dateHeading = $"## {group.Key}";
+            var gameEntries = group.Select(g =>
+            {
+                var gameUrl = new GameUrlBuilder(baseAddress, g.GameFound.MasterGame.MasterGameID)
+                    .BuildUrl(g.GameFound.MasterGame.GameName);
+                var entry = $"**{gameUrl}**";
+                if (g.PublisherWhoPicked != null)
+                {
+                    entry += $"\nPicked: {g.PublisherWhoPicked.GetPublisherAndUserDisplayName()}";
+                }
+                if (g.PublisherWhoCounterPicked != null)
+                {
+                    entry += $"\nCounter Picked: {g.PublisherWhoCounterPicked.GetPublisherAndUserDisplayName()}";
+                }
+                entry += $"\nHype Factor: {g.GameFound.HypeFactor:F2}";
+                return entry;
+            });
+            return dateHeading + "\n" + string.Join("\n", gameEntries);
+        });
 
-        return counterPickPublisher is not null
-            ? $"> **{masterGame.EstimatedReleaseDate}** - {gameUrl}\n > Counter Pick For {counterPickPublisher!.GetPublisherAndUserDisplayName()}"
-            : null;
+        return string.Join("\n-----------\n", dateSections);
     }
 
-    public static string BuildGameWithPublishersMessage(SingleGameNews gameNews, string baseAddress)
+    public static string BuildDateGroupedGameMessagesForUser(IReadOnlyList<SingleGameNews> games, string baseAddress)
     {
-        var masterGameYear = gameNews.MasterGameYear;
-        var gameUrl = new GameUrlBuilder(baseAddress, masterGameYear.MasterGame.MasterGameID).BuildUrl(masterGameYear.MasterGame.GameName);
+        var gamesByDate = games
+            .GroupBy(g => g.MasterGameYear.MasterGame.ReleaseDate?.ToString() ?? g.MasterGameYear.MasterGame.EstimatedReleaseDate)
+            .OrderBy(g => g.Min(x => x.MasterGameYear.MasterGame.GetDefiniteMaximumReleaseDate()));
 
-        var joinedPublisherLeagueNames = string.Join("\n> ",
-            gameNews.PublisherInfo.Select(p =>
+        var dateSections = gamesByDate.Select(group =>
+        {
+            var dateHeading = $"## {group.Key}";
+            var gameEntries = group.Select(g =>
             {
-                var leagueUrl = new LeagueUrlBuilder(baseAddress, p.LeagueID, p.Year).BuildUrl(p.LeagueName);
-                return $"{leagueUrl} {(p.CounterPick ? "(Counter Pick)" : "")}";
-            }));
-        return $"**{masterGameYear.MasterGame.EstimatedReleaseDate}** - {gameUrl}\n> {joinedPublisherLeagueNames}";
+                var gameUrl = new GameUrlBuilder(baseAddress, g.MasterGameYear.MasterGame.MasterGameID)
+                    .BuildUrl(g.MasterGameYear.MasterGame.GameName);
+                var publisherLines = g.PublisherInfo.Select(p =>
+                {
+                    var leagueUrl = new LeagueUrlBuilder(baseAddress, p.LeagueID, p.Year).BuildUrl(p.LeagueName);
+                    return $"{leagueUrl} {(p.CounterPick ? "(Counter Pick)" : "")}";
+                });
+                return $"**{gameUrl}**\n> {string.Join("\n> ", publisherLines)}\nHype Factor: {g.MasterGameYear.HypeFactor:F2}";
+            });
+            return dateHeading + "\n" + string.Join("\n", gameEntries);
+        });
+
+        return string.Join("\n-----------\n", dateSections);
+    }
+
+    public static IReadOnlyList<MatchedGameDisplay> ConvertToMatchedGameDisplays(
+        IReadOnlyList<IGrouping<MasterGameYear, PublisherGame>> gameNewsData, LeagueYear leagueYear)
+    {
+        var results = new List<MatchedGameDisplay>();
+        foreach (var gameGrouping in gameNewsData)
+        {
+            var standardGame = gameGrouping.FirstOrDefault(p => !p.CounterPick);
+            var counterPick = gameGrouping.FirstOrDefault(p => p.CounterPick);
+            var standardPublisher = leagueYear.Publishers.FirstOrDefault(p =>
+                standardGame is not null && p.PublisherID == standardGame.PublisherID);
+            var counterPickPublisher = leagueYear.Publishers.FirstOrDefault(p =>
+                counterPick is not null && p.PublisherID == counterPick.PublisherID);
+
+            if (standardPublisher is null && counterPickPublisher is null)
+            {
+                continue;
+            }
+
+            results.Add(new MatchedGameDisplay(gameGrouping.Key)
+            {
+                PublisherWhoPicked = standardPublisher,
+                PublisherWhoCounterPicked = counterPickPublisher,
+                LeagueYear = leagueYear
+            });
+        }
+        return results;
     }
 
     public static IList<string> RankLeaguePublishers(LeagueYear leagueYear,

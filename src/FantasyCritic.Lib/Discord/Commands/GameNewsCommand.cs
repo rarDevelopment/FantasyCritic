@@ -1,6 +1,5 @@
 using Discord;
 using Discord.Interactions;
-using DiscordDotNetUtilities;
 using DiscordDotNetUtilities.Interfaces;
 using FantasyCritic.Lib.BusinessLogicFunctions;
 using FantasyCritic.Lib.Extensions;
@@ -23,7 +22,6 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
     private readonly string _baseAddress;
     private const string UpcomingValue = "Upcoming";
     private const string RecentValue = "Recent";
-    private const int MaxMessageLength = 2000;
 
     public GameNewsCommand(IDiscordRepo discordRepo,
         InterLeagueService interLeagueService,
@@ -71,18 +69,21 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
             var myGameNews = await _publisherService.GetMyGameNews(user);
             var myGameNewsSet = MyGameNewsSet.BuildMyGameNews(myGameNews, dateToCheck, 10);
             var gameNewsToUse = isRecentReleases ? myGameNewsSet.RecentGames : myGameNewsSet.UpcomingGames;
-            var gameMessages = gameNewsToUse
-                .Select(x => DiscordSharedMessageUtilities.BuildGameWithPublishersMessage(x, _baseAddress))
-                .ToList();
 
-            var messagesToSend = new MessageListBuilder(gameMessages, MaxMessageLength)
-                .WithDivider("\n--------------------------------\n")
-                .Build();
+            if (gameNewsToUse.Count == 0)
+            {
+                await FollowupAsync(embed: _discordFormatter.BuildErrorEmbedWithUserFooter(
+                    "No Releases Found",
+                    "No data found.",
+                    Context.User));
+                return;
+            }
+
+            var formattedMessage = DiscordSharedMessageUtilities.BuildDateGroupedGameMessagesForUser(gameNewsToUse, _baseAddress);
 
             await FollowupAsync(embed: _discordFormatter.BuildRegularEmbedWithUserFooter(
                 $"Your {upcomingOrRecent} Releases ({user.UserName})",
-                string.Join("\n",
-                    messagesToSend),
+                formattedMessage,
                 Context.User));
         }
         else
@@ -120,31 +121,26 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
                 return;
             }
 
-            var messages = new List<string>();
-            foreach (var recentGameGrouping in gameNewsData)
+            var matchedGames = DiscordSharedMessageUtilities.ConvertToMatchedGameDisplays(gameNewsData, leagueYear);
+            if (matchedGames.Count == 0)
             {
-                var standardGame = recentGameGrouping.FirstOrDefault(p => !p.CounterPick);
-                var counterPick = recentGameGrouping.FirstOrDefault(p => p.CounterPick);
-                var standardPublisher = leagueYear.Publishers.FirstOrDefault(p =>
-                    standardGame is not null && p.PublisherID == standardGame.PublisherID);
-                var counterPickPublisher = leagueYear.Publishers.FirstOrDefault(p =>
-                    counterPick is not null && p.PublisherID == counterPick.PublisherID);
-
-                var gameMessage = DiscordSharedMessageUtilities.BuildGameMessage(standardPublisher,
-                    counterPickPublisher, recentGameGrouping.Key.MasterGame, _baseAddress);
-                if (gameMessage is not null)
-                {
-                    messages.Add(gameMessage);
-                }
+                await FollowupAsync(embed: _discordFormatter.BuildErrorEmbedWithUserFooter(
+                    "Error Getting Game News",
+                    "No data found.",
+                    Context.User));
+                return;
             }
 
-            var messagesToSend = new MessageListBuilder(messages, MaxMessageLength)
-                .WithDivider("\n--------------------------------\n")
-                .Build();
+            var formattedMessage = DiscordSharedMessageUtilities.BuildDateGroupedGameMessages(matchedGames, _baseAddress);
+
+            if (formattedMessage.Length > 4096)
+            {
+                formattedMessage = "There are too many games to list in a Discord Message.";
+            }
 
             await FollowupAsync(embed: _discordFormatter.BuildRegularEmbedWithUserFooter(
                 $"{upcomingOrRecent} Publisher Releases",
-                string.Join("\n", messagesToSend),
+                formattedMessage,
                 Context.User));
         }
     }
