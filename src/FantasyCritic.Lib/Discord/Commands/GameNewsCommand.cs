@@ -22,6 +22,10 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
     private readonly string _baseAddress;
     private const string UpcomingValue = "Upcoming";
     private const string RecentValue = "Recent";
+    private const string TimeRangeAll = "All";
+    private const string TimeRangeToday = "Today";
+    private const string TimeRangeThisWeek = "ThisWeek";
+    private const string TimeRangeThisMonth = "ThisMonth";
 
     public GameNewsCommand(IDiscordRepo discordRepo,
         InterLeagueService interLeagueService,
@@ -47,12 +51,20 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
         [Summary("upcoming_or_recent", "Whether you want upcoming or recent releases")]
         [Choice("Upcoming Releases", UpcomingValue)]
         [Choice("Recent Releases", RecentValue)]
-        string upcomingOrRecent = UpcomingValue)
+        string upcomingOrRecent = UpcomingValue,
+        [Summary("time_range", "Filter to a specific time range")]
+        [Choice("All", TimeRangeAll)]
+        [Choice("Today", TimeRangeToday)]
+        [Choice("This Week", TimeRangeThisWeek)]
+        [Choice("This Month", TimeRangeThisMonth)]
+        string timeRange = TimeRangeAll)
     {
         await DeferAsync();
         var dateToCheck = _clock.GetGameEffectiveDate();
         var supportedYears = await _interLeagueService.GetSupportedYears();
         var isRecentReleases = upcomingOrRecent == RecentValue;
+        var cutoffDate = GetCutoffDate(dateToCheck, timeRange, isRecentReleases);
+        var hasTimeFilter = timeRange != TimeRangeAll;
 
         if (Context.Channel is IDMChannel)
         {
@@ -70,6 +82,16 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
             var myGameNewsSet = MyGameNewsSet.BuildMyGameNews(myGameNews, dateToCheck, 10);
             var gameNewsToUse = isRecentReleases ? myGameNewsSet.RecentGames : myGameNewsSet.UpcomingGames;
 
+            if (hasTimeFilter)
+            {
+                gameNewsToUse = gameNewsToUse
+                    .Where(x => x.MasterGameYear.MasterGame.ReleaseDate.HasValue
+                        && (isRecentReleases
+                            ? x.MasterGameYear.MasterGame.ReleaseDate.Value >= cutoffDate
+                            : x.MasterGameYear.MasterGame.ReleaseDate.Value <= cutoffDate))
+                    .ToList();
+            }
+
             if (gameNewsToUse.Count == 0)
             {
                 await FollowupAsync(embed: _discordFormatter.BuildErrorEmbedWithUserFooter(
@@ -81,8 +103,12 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
 
             var formattedMessage = DiscordSharedMessageUtilities.BuildDateGroupedGameMessagesForUser(gameNewsToUse, _baseAddress);
 
+            var dmTitle = hasTimeFilter
+                ? $"Your Releases {GetTimeRangeLabel(timeRange)} ({user.UserName})"
+                : $"Your {upcomingOrRecent} Releases ({user.UserName})";
+
             await FollowupAsync(embed: _discordFormatter.BuildRegularEmbedWithUserFooter(
-                $"Your {upcomingOrRecent} Releases ({user.UserName})",
+                dmTitle,
                 formattedMessage,
                 Context.User));
         }
@@ -122,6 +148,17 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
             }
 
             var matchedGames = DiscordSharedMessageUtilities.ConvertToMatchedGameDisplays(gameNewsData, leagueYear);
+
+            if (hasTimeFilter)
+            {
+                matchedGames = matchedGames
+                    .Where(x => x.GameFound.MasterGame.ReleaseDate.HasValue
+                        && (isRecentReleases
+                            ? x.GameFound.MasterGame.ReleaseDate.Value >= cutoffDate
+                            : x.GameFound.MasterGame.ReleaseDate.Value <= cutoffDate))
+                    .ToList();
+            }
+
             if (matchedGames.Count == 0)
             {
                 await FollowupAsync(embed: _discordFormatter.BuildErrorEmbedWithUserFooter(
@@ -138,10 +175,30 @@ public class GameNewsCommand : InteractionModuleBase<SocketInteractionContext>
                 formattedMessage = "There are too many games to list in a Discord Message.";
             }
 
+            var leagueTitle = hasTimeFilter
+                ? $"Publisher Releases {GetTimeRangeLabel(timeRange)}"
+                : $"{upcomingOrRecent} Publisher Releases";
+
             await FollowupAsync(embed: _discordFormatter.BuildRegularEmbedWithUserFooter(
-                $"{upcomingOrRecent} Publisher Releases",
+                leagueTitle,
                 formattedMessage,
                 Context.User));
         }
     }
+
+    private static LocalDate GetCutoffDate(LocalDate dateToCheck, string timeRange, bool isRecent) => timeRange switch
+    {
+        TimeRangeToday => isRecent ? dateToCheck.PlusDays(-1) : dateToCheck.PlusDays(1),
+        TimeRangeThisWeek => isRecent ? dateToCheck.PlusWeeks(-1) : dateToCheck.PlusWeeks(1),
+        TimeRangeThisMonth => isRecent ? dateToCheck.PlusMonths(-1) : dateToCheck.PlusMonths(1),
+        _ => isRecent ? LocalDate.MinIsoValue : LocalDate.MaxIsoValue
+    };
+
+    private static string GetTimeRangeLabel(string timeRange) => timeRange switch
+    {
+        TimeRangeToday => "Today",
+        TimeRangeThisWeek => "This Week",
+        TimeRangeThisMonth => "This Month",
+        _ => ""
+    };
 }

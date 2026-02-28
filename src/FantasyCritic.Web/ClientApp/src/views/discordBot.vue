@@ -281,9 +281,26 @@
                   <span class="command-label">Command:</span>
                   <code>/game-news</code>
                 </p>
+                <p>
+                  <span class="discord-param-text">
+                    <span class="param-label">Parameters:</span>
+                    <p class="parameter-explanation">
+                      <code>upcoming_or_recent:</code>
+                      [optional] Whether you want upcoming or recent releases. Defaults to "Upcoming Releases".
+                    </p>
+                    <p class="parameter-explanation">
+                      <code>time_range:</code>
+                      [optional] Filter results to a specific time range. Options are "All" (default), "Today", "This Week", or "This Month". For upcoming releases, this limits to games releasing
+                      within that period. For recent releases, this limits to games that released within that period.
+                    </p>
+                  </span>
+                </p>
                 <span>
-                  Displays upcoming or recent releases for players in the league. You can also use this command in a Direct Message to the bot and it will display all of your upcoming or recent
-                  releases across all of your leagues. NOTE: DMing the bot will require that your Discord account be linked to your Fantasy Critic account.
+                  Displays upcoming or recent releases for players in the league, grouped by release date. You can also use this command in a Direct Message to the bot and it will display all of your
+                  upcoming or recent releases across all of your leagues.
+                  <br />
+                  <strong>NOTE:</strong>
+                  DMing the bot will require that your Discord account be linked to your Fantasy Critic account.
                 </span>
               </div>
               <hr />
